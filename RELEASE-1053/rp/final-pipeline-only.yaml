@@ -1,0 +1,23 @@
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlan
+metadata:
+  labels:
+    release.appstudio.openshift.io/auto-release: 'false'
+    release.appstudio.openshift.io/standing-attribution: 'true'
+  name: final-pipeline-only
+spec:
+  application: demo
+  finalPipeline:
+    serviceAccountName: release-service-account
+    pipelineRef:
+      resolver: git
+      params:
+        - name: url
+          value: https://github.com/johnbieren/jb-konflux-demos.git
+        - name: revision
+          value: main
+        - name: pathInRepo
+          value: release_1109/tenant-pipeline.yaml
+    params:
+      - name: released_version
+        value: 1.2.3

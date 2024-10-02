@@ -14,7 +14,7 @@ metadata:
   name: demo-snapshot
   namespace: dev-release1053
 spec:
-  application: demo1
+  application: demo
   artifacts: {}
   components:
   - containerImage: quay.io/hacbs-release-tests/dev-release-team-tenant/simple-python/devfile-sample-python-basic@sha256:199c12573aeec5a0761b4ebcd9769291dd4b94cc9ff15980c64d98e8a03d2dce

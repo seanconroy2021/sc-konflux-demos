@@ -1,0 +1,11 @@
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Release
+metadata:
+  labels:
+    release.appstudio.openshift.io/author: kube_admin
+  name: managed-final-pipeline
+  namespace: dev-release1053
+spec:
+  releasePlan: final-pipeline
+  snapshot: demo-snapshot

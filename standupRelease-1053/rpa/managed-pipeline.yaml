@@ -12,10 +12,35 @@ spec:
       resolver: git
       params:
         - name: url
-          value: "https://github.com/johnbieren/jb-konflux-demos.git"
+          value: "https://github.com/seanconroy2021/sc-konflux-demos.git"
         - name: revision
           value: main
         - name: pathInRepo
-          value: "release_1109/managed-dummy.yaml"
+          value: "RELEASE-1053/pipeline/managed-pipeline.yaml"
     serviceAccountName: release-service-account
   policy: mvp-policy
+  data:
+    cdn:
+      env: stage
+    mapping:
+      components:
+        - name: e2e-multi-platform-test
+          repository: "registry.stage.redhat.io/rhtap/konflux-release-e2e"
+          tags: 
+            - latest
+            - latest-{{ timestamp }}
+          source:
+            git:
+              url: "https://github.com/redhat-appstudio-qe/multi-platform-test-prod"
+    pyxis:
+      server: stage
+      secret: pyxis
+    releaseNotes:
+      cpe: "cpe:/a:example.com"
+      product_id: "555"
+      product_name: "test product"
+      product_stream: "rhtas-tp1"
+      product_version: "v1.0"
+      type: "RHSA"
+    sign:
+      configMapName: "hacbs-signing-pipeline-config-redhatbeta2"

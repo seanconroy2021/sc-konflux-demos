@@ -65,7 +65,7 @@ spec:
           - name: revision
             value: production
           - name: pathInRepo
-            value: tasks/collect-data/collect-data.yaml
+            value: tasks/managed/collect-data/collect-data.yaml
       params:
         - name: release
           value: $(params.release)
@@ -102,7 +102,7 @@ spec:
           - name: revision
             value: production
           - name: pathInRepo
-            value: tasks/cleanup-workspace/cleanup-workspace.yaml
+            value: tasks/managed/cleanup-workspace/cleanup-workspace.yaml
       when:
         - input: $(params.postCleanUp)
           operator: in

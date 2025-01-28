@@ -65,7 +65,7 @@ spec:
           - name: revision
             value: production
           - name: pathInRepo
-            value: tasks/collect-data/collect-data.yaml
+            value: tasks/managed/collect-data/collect-data.yaml
       params:
         - name: release
           value: $(params.release)
@@ -93,11 +93,11 @@ spec:
       taskRef:
         params:
           - name: url
-            value: https://github.com/seanconroy2021/release-service-catalog.git
+            value: "https://github.com/konflux-ci/release-service-catalog.git"
           - name: revision
-            value: RELEASE-987
+            value: production
           - name: pathInRepo
-            value: tasks/check-data-keys/check-data-keys.yaml
+            value: tasks/managed/check-data-keys/check-data-keys.yaml
         resolver: git
       workspaces:
         - name: data
@@ -114,7 +114,7 @@ spec:
           - name: revision
             value: production
           - name: pathInRepo
-            value: tasks/cleanup-workspace/cleanup-workspace.yaml
+            value: tasks/managed/cleanup-workspace/cleanup-workspace.yaml
       when:
         - input: $(params.postCleanUp)
           operator: in

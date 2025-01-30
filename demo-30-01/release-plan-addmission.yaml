@@ -1,0 +1,21 @@
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlanAdmission
+metadata:
+  name: managed-pipeline
+  namespace: managed-releng
+spec:
+  applications:
+    - demo
+  origin: dev-release
+  pipeline:
+    pipelineRef:
+      resolver: git
+      params:
+        - name: url
+          value: "https://github.com/seanconroy2021/sc-konflux-demos.git"
+        - name: revision
+          value: main
+        - name: pathInRepo
+          value: "demo-30-01/pipelines/managed-pipeline.yaml"
+    serviceAccountName: release-service-account
+  policy: mvp-policy

@@ -2,7 +2,7 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: A tentant and final pipeline
+  name: A-tentant-pipeline
   labels:
     app.kubernetes.io/version: "0.1"
   annotations:

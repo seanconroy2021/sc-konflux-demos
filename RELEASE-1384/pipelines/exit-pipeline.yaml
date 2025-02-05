@@ -2,7 +2,7 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: A-tentant-pipeline
+  name: A-pipeline-to-fail
   labels:
     app.kubernetes.io/version: "0.1"
   annotations:
@@ -58,3 +58,6 @@ spec:
 
               echo $(params.RELEASED_VERSION)
               get-resource "snapshot" $(params.SNAPSHOT)
+              echo "Failing the pipeline..."
+              exit 1
+

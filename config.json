@@ -1,0 +1,4 @@
+{
+    "text": "This text contains the value of the variable ENV_VAR: {{ENV_VAR}}"
+}
+  

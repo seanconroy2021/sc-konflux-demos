@@ -1,0 +1,148 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: run-collectors
+  labels:
+    app.kubernetes.io/version: "0.5.0"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.12.1"
+    tekton.dev/tags: release
+spec:
+  description: >-
+    Tekton pipeline to execute the collectors defined in the releasePlan and releasePlanAdmission. The pipeline will
+    save the required resources to the workspace, execute the collectors, then update the Release.Status with the
+    results.
+  params:
+    - name: release
+      type: string
+      description:
+        The namespaced name (namespace/name) of the Release custom resource initiating this pipeline execution
+    - name: previousRelease
+      type: string
+      description: >-
+        The namespaced name (namespace/name) of the previous successful Release prior to the one
+        passed as params.release
+    - name: collectorsResourceType
+      description: The type of resource that contains the collectors
+      type: string
+      default: releaseplan
+    - name: collectorsResource
+      description: |
+        The namespaced name of the resource that contains the collectors
+      type: string
+    - name: collectorsRepository
+      type: string
+      description: Git repository where the collectors will be defined
+      default: https://github.com/konflux-ci/release-service-collectors.git
+    - name: collectorsRepositoryRevision
+      type: string
+      description: Git repository revision
+      default: development
+    - name: taskGitUrl
+      type: string
+      description: The url to the git repo where the release-service-catalog tasks to be used are stored
+      default: https://github.com/konflux-ci/release-service-catalog.git
+    - name: taskGitRevision
+      type: string
+      description: The revision in the taskGitUrl repo to be used
+  workspaces:
+    - name: release-workspace
+  tasks:
+    - name: collect-collectors-resources
+      taskRef:
+        resolver: "git"
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/release-service-catalog.git
+          - name: revision
+            value: development
+          - name: pathInRepo
+            value: tasks/collectors/collect-collectors-resources/collect-collectors-resources.yaml
+      params:
+        - name: previousRelease
+          value: $(params.previousRelease)
+        - name: release
+          value: $(params.release)
+        - name: collectorsResourceType
+          value: $(params.collectorsResourceType)
+        - name: collectorsResource
+          value: $(params.collectorsResource)
+        - name: subdirectory
+          value: $(context.pipelineRun.uid)
+      workspaces:
+        - name: data
+          workspace: release-workspace
+    - name: run-collectors
+      taskRef:
+        resolver: "git"
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/release-service-catalog.git
+          - name: revision
+            value: development
+          - name: pathInRepo
+            value: tasks/collectors/run-collectors/run-collectors.yaml
+      params:
+        - name: collectorsPath
+          value: $(tasks.collect-collectors-resources.results.collectorsResource)
+        - name: collectorsResourceType
+          value: $(params.collectorsResourceType)
+        - name: collectorsRepository
+          value: $(params.collectorsRepository)
+        - name: collectorsRepositoryRevision
+          value: $(params.collectorsRepositoryRevision)
+        - name: resultsDir
+          value: $(tasks.collect-collectors-resources.results.resultsDir)
+        - name: releasePath
+          value: $(tasks.collect-collectors-resources.results.release)
+        - name: previousReleasePath
+          value: $(tasks.collect-collectors-resources.results.previousRelease)
+      workspaces:
+        - name: data
+          workspace: release-workspace
+      runAfter:
+        - collect-collectors-resources
+    - name: save-collectors-results
+      taskRef:
+        resolver: "git"
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/release-service-catalog.git
+          - name: revision
+            value: development
+          - name: pathInRepo
+            value: tasks/collectors/save-collectors-results/save-collectors-results.yaml
+      params:
+        - name: resourceType
+          value: release
+        - name: statusKey
+          value: collectors
+        - name: resource
+          value: $(params.release)
+        - name: resultsDirPath
+          value: $(tasks.collect-collectors-resources.results.resultsDir)
+      workspaces:
+        - name: data
+          workspace: release-workspace
+      runAfter:
+        - run-collectors
+  finally:
+    - name: cleanup
+      taskRef:
+        resolver: "git"
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/release-service-catalog.git
+          - name: revision
+            value: development
+          - name: pathInRepo
+            value: tasks/managed/cleanup-workspace/cleanup-workspace.yaml
+      params:
+        - name: subdirectory
+          value: "$(context.pipelineRun.uid)"
+        - name: pipelineRunUid
+          value: $(context.pipelineRun.uid)
+      workspaces:
+        - name: input
+          workspace: release-workspace

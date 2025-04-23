@@ -1,0 +1,121 @@
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: run-collectors
+  labels:
+    app.kubernetes.io/version: "1.1.0"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.12.1"
+    tekton.dev/tags: release
+spec:
+  description: >-
+    Tekton task to run collectors defined in a resource passed as parameter
+  params:
+    - name: collectorsPath
+      type: string
+      description: Path to the JSON string of the resource containing the collectors in the data workspace
+    - name: collectorsResourceType
+      description: The type of resource that contains the collectors
+      type: string
+    - name: resultsDir
+      type: string
+      description: The relative path in the workspace to save the collector results to
+    - name: collectorsRepository
+      type: string
+      description: Git repository where the collectors will be defined
+    - name: collectorsRepositoryRevision
+      type: string
+      default: main
+      description: Git repository revision
+    - name: releasePath
+      type: string
+      description:  >-
+        Path to the json data file of the current in-progress Release
+    - name: previousReleasePath
+      type: string
+      description:  >-
+        Path to the json data file of the previous successful Release prior to the current one
+  workspaces:
+    - name: data
+      description: Workspace where the CRs are stored
+  steps:
+    - name: run-collectors
+      image: quay.io/konflux-ci/release-service-utils:e633d51cd41d73e4b3310face21bb980af7a662f
+      script: |
+        #!/usr/bin/env bash
+        set -xeo pipefail
+
+        DEFAULT_TIMEOUT=900
+        COLLECTORS_REPOSITORY="$(params.collectorsRepository)"
+        COLLECTORS_REPOSITORY_REVISION="$(params.collectorsRepositoryRevision)"
+        COLLECTORS_FILE="$(workspaces.data.path)/$(params.collectorsPath)"
+        COLLECTORS_RESOURCE_TYPE="$(params.collectorsResourceType)"
+        RESULTS_DIR="$(workspaces.data.path)/$(params.resultsDir)"
+        CONCURRENT_LIMIT=4
+        RELEASE_FILE="$(workspaces.data.path)/$(params.releasePath)"
+        PREVIOUS_RELEASE_FILE="$(workspaces.data.path)/$(params.previousReleasePath)"
+
+        execute_collector() { # Expected arguments are [collector json, type of collector]
+            collector="$1"
+            collector_type="$2"
+            name="$(jq -r '.name' <<< "$collector")"
+            type="$(jq -r '.type' <<< "$collector")"
+            TIMEOUT="$(jq -r --arg default "$DEFAULT_TIMEOUT" '.timeout // $default' <<< "$collector")"
+            ARGS=()
+            NUM_ARGS="$(jq '.params | length' <<< "$collector")"
+            for ((j = 0; j < NUM_ARGS; j++)) ; do
+                param="$(jq -c --argjson j "$j" '.params[$j]' <<< "$collector")"
+                arg_name="$(jq -r '.name' <<< "$param")"
+                arg_value="$(jq -r '.value' <<< "$param")"
+                ARGS=("${ARGS[@]}" --"${arg_name}" "${arg_value}")
+            done
+            # # add the current release json path as an arg
+            # ARGS=("${ARGS[@]}" --release "${RELEASE_FILE}")
+            # # add the previous release json path as an arg
+            # ARGS=("${ARGS[@]}" --previousRelease "${PREVIOUS_RELEASE_FILE}")
+            # Execute collector
+            timeout "$TIMEOUT" python3 "lib/${type}.py" "${ARGS[@]}" "${collector_type}" | tee \
+              "$RESULTS_DIR"/"$2"-"$name".json
+        }
+
+        if [ ! -d "${RESULTS_DIR}" ] ; then
+            echo The passed results directory does not exist. Failing as there is nowhere to save the results to
+            exit 1
+        fi
+
+        cd /tmp
+        
+        git clone "${COLLECTORS_REPOSITORY}" --branch "${COLLECTORS_REPOSITORY_REVISION}" collectors
+        pushd collectors
+        
+        # Set COLLECTOR_TYPE based on the value of COLLECTORS_RESOURCE_TYPE
+        if [[ "$COLLECTORS_RESOURCE_TYPE" == "releaseplan" ]]; then
+          COLLECTOR_TYPE="tenant"
+        elif [[ "$COLLECTORS_RESOURCE_TYPE" == "releaseplanadmission" ]]; then
+          COLLECTOR_TYPE="managed"
+        else
+          echo "Error: Invalid COLLECTORS_RESOURCE_TYPE. Expected 'releaseplan' or 'releaseplanadmission'." >&2
+          exit 1
+        fi
+
+        RUNNING_JOBS="\j" # Bash parameter for number of jobs currently running
+
+        if [ ! -f "${COLLECTORS_FILE}" ] ; then
+            echo "No valid file was found so no collectors will be run."
+        else
+            NUM_COLLECTORS="$(jq '.spec.collectors.items | length' "${COLLECTORS_FILE}")"
+            for ((i = 0; i < NUM_COLLECTORS; i++)) ; do
+                collector="$(jq -c --argjson i "$i" '.spec.collectors.items[$i]' "${COLLECTORS_FILE}")"
+                # Limit batch size to concurrent limit
+                while (( ${RUNNING_JOBS@P} >= "$CONCURRENT_LIMIT" )); do
+                    wait -n
+                done
+                execute_collector "$collector" "${COLLECTOR_TYPE}" &
+            done
+        fi
+        echo "sean"
+        # Wait for remaining processes to finish
+        while (( ${RUNNING_JOBS@P} > 0 )); do
+            wait -n
+        done

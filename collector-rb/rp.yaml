@@ -1,0 +1,40 @@
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlan
+metadata:
+  labels:
+    release.appstudio.openshift.io/auto-release: 'false'
+    release.appstudio.openshift.io/standing-attribution: 'true'
+  name: test-component
+  namespace: user-ns2
+spec:
+  application: test-component
+  target: managed-ns2
+  tenantPipeline:
+    pipelineRef:
+      resolver: git
+      params:
+        - name: url
+          value: "https://github.com/seanconroy2021/sc-konflux-demos.git"
+        - name: revision
+          value: main
+        - name: pathInRepo
+      serviceAccountName: appstudio-pipeline
+    params:
+      - name: released_version
+        value: 1.2.3     
+  collectors:
+    items:
+      - name: template
+        params:
+          - name: git
+            value: "https://github.com/seanconroy2021/sc-konflux-demos.git"
+          - name: branch
+            value: "main"
+          - name: path
+            value: "config.json"
+        type: template
+    secrets:
+      - test-secret-3
+      - test-secret-4
+    serviceAccountName: collector-service

@@ -78,11 +78,11 @@ spec:
         resolver: "git"
         params:
           - name: url
-            value: https://github.com/konflux-ci/release-service-catalog.git
+            value: https://github.com/seanconroy2021/sc-konflux-demos
           - name: revision
-            value: development
+            value: main
           - name: pathInRepo
-            value: tasks/collectors/run-collectors/run-collectors.yaml
+            value: pipelines/run-collectors/tasks/run-collectors.yaml
       params:
         - name: collectorsPath
           value: $(tasks.collect-collectors-resources.results.collectorsResource)

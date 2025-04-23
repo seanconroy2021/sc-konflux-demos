@@ -1,0 +1,30 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: release-service-role-access
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - delete
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: release-service-role-access-binding
+subjects:
+  - kind: ServiceAccount
+    name: release-service-controller-manager
+    namespace: release-service
+roleRef:
+  kind: ClusterRole
+  name: release-service-role-access
+  apiGroup: rbac.authorization.k8s.io

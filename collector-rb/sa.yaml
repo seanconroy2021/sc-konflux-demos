@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: collector-service
+  namespace: user-ns2
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: collector-service
+  namespace: managed-ns2

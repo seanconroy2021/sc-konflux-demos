@@ -1,0 +1,27 @@
+car_brands:
+  Japan:
+    - Toyota
+    - Honda
+    - Nissan
+    - Subaru
+    - Mazda
+    - Mitsubishi
+    - Lexus
+  USA:
+    - Ford
+    - Chevrolet
+    - Jeep
+    - Tesla
+  Germany:
+    - BMW
+    - Mercedes-Benz
+    - Volkswagen
+    - Audi
+  South_Korea:
+    - Hyundai
+    - Kia
+  United_Kingdom:
+    - Land Rover
+    - Jaguar
+  Sweden:
+    - Volvo

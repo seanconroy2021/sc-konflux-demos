@@ -1,0 +1,7 @@
+---
+resources:
+- application.yaml
+- snapshot.yaml
+- policy.yaml
+- rp.yaml
+- rpa/rpa.yaml

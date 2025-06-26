@@ -1,0 +1,12 @@
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlan
+metadata:
+  labels:
+    release.appstudio.openshift.io/auto-release: 'false'
+    release.appstudio.openshift.io/standing-attribution: 'true'
+  name: hello-world-app-rp
+  namespace: user-ns2
+spec:
+  application: hello-world-app
+  target: managed-ns2

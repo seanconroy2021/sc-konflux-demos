@@ -1,0 +1,24 @@
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlanAdmission
+metadata:
+  name: hello-world-app-rpa-01
+  namespace: managed-ns2
+  labels:
+    release.appstudio.openshift.io/auto-release: 'true'
+spec:
+  applications:
+    - hello-world-app
+  origin: user-ns2
+  pipeline:
+    pipelineRef:
+      resolver: git
+      params:
+        - name: url
+          value: https://github.com/seanconroy2021/sc-konflux-demos.git
+        - name: revision
+          value: main
+        - name: pathInRepo
+          value: RELEASE-1709/rpa/pipelines/managed-pipeline.yaml
+    serviceAccountName: appstudio-pipeline
+  policy: mvp-policy

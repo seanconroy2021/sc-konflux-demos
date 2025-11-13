@@ -3,14 +3,13 @@ apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: run-collectors
-  labels:
-    app.kubernetes.io/version: "1.1.0"
   annotations:
     tekton.dev/pipelines.minVersion: "0.12.1"
     tekton.dev/tags: release
 spec:
-  description: >-
-    Tekton task to run collectors defined in a resource passed as parameter
+  description: |-
+    Tekton task to run the collectors defined in a resource passed as parameter. The results are saved in the
+    resultsDir, one file per collector.
   params:
     - name: collectorsPath
       type: string
@@ -56,6 +55,14 @@ spec:
         RELEASE_FILE="$(workspaces.data.path)/$(params.releasePath)"
         PREVIOUS_RELEASE_FILE="$(workspaces.data.path)/$(params.previousReleasePath)"
 
+        echo "Current Release....."
+        jq -re '.spec.snapshot | select(. != null)' "${RELEASE_FILE}" \
+          || echo "No snapshot found in current release."
+
+        echo "Previous Release....."
+        jq -re '.spec.snapshot | select(. != null)' "${PREVIOUS_RELEASE_FILE}" \
+          || echo "No snapshot found in previous release."
+
         execute_collector() { # Expected arguments are [collector json, type of collector]
             collector="$1"
             collector_type="$2"
@@ -98,15 +105,6 @@ spec:
           echo "Error: Invalid COLLECTORS_RESOURCE_TYPE. Expected 'releaseplan' or 'releaseplanadmission'." >&2
           exit 1
         fi
-        
-        echo "Previous release file:"
-        echo "--------------------------------"
-        cat "$PREVIOUS_RELEASE_FILE"
-
-        echo "Release file:"
-        echo "--------------------------------"
-        cat "$RELEASE_FILE"
-        echo "--------------------------------"
 
         RUNNING_JOBS="\j" # Bash parameter for number of jobs currently running
 

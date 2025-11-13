@@ -3,13 +3,11 @@ apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
   name: run-collectors
-  labels:
-    app.kubernetes.io/version: "0.5.0"
   annotations:
     tekton.dev/pipelines.minVersion: "0.12.1"
     tekton.dev/tags: release
 spec:
-  description: >-
+  description: |-
     Tekton pipeline to execute the collectors defined in the releasePlan and releasePlanAdmission. The pipeline will
     save the required resources to the workspace, execute the collectors, then update the Release.Status with the
     results.
@@ -42,10 +40,11 @@ spec:
     - name: taskGitUrl
       type: string
       description: The url to the git repo where the release-service-catalog tasks to be used are stored
-      default: https://github.com/konflux-ci/release-service-catalog.git
+      default: https://github.com/seanconroy2021/sc-konflux-demos.git
     - name: taskGitRevision
       type: string
       description: The revision in the taskGitUrl repo to be used
+      default: main
   workspaces:
     - name: release-workspace
   tasks:
@@ -54,11 +53,11 @@ spec:
         resolver: "git"
         params:
           - name: url
-            value: https://github.com/konflux-ci/release-service-catalog.git
+            value: $(params.taskGitUrl)
           - name: revision
-            value: development
+            value: $(params.taskGitRevision)
           - name: pathInRepo
-            value: tasks/collectors/collect-collectors-resources/collect-collectors-resources.yaml
+            value: pipelines/run-collectors/tasks/collect-collectors-resources.yaml
       params:
         - name: previousRelease
           value: $(params.previousRelease)
@@ -78,9 +77,9 @@ spec:
         resolver: "git"
         params:
           - name: url
-            value: https://github.com/seanconroy2021/sc-konflux-demos
+            value: $(params.taskGitUrl)
           - name: revision
-            value: main
+            value: $(params.taskGitRevision)
           - name: pathInRepo
             value: pipelines/run-collectors/tasks/run-collectors.yaml
       params:
@@ -108,11 +107,11 @@ spec:
         resolver: "git"
         params:
           - name: url
-            value: https://github.com/konflux-ci/release-service-catalog.git
+            value: $(params.taskGitUrl)
           - name: revision
-            value: development
+            value: $(params.taskGitRevision)
           - name: pathInRepo
-            value: tasks/collectors/save-collectors-results/save-collectors-results.yaml
+            value: pipelines/run-collectors/tasks/save-collectors-results.yaml
       params:
         - name: resourceType
           value: release
@@ -133,16 +132,20 @@ spec:
         resolver: "git"
         params:
           - name: url
-            value: https://github.com/konflux-ci/release-service-catalog.git
+            value: $(params.taskGitUrl)
           - name: revision
-            value: development
+            value: $(params.taskGitRevision)
           - name: pathInRepo
-            value: tasks/managed/cleanup-workspace/cleanup-workspace.yaml
+            value: pipelines/run-collectors/tasks/cleanup-workspace.yaml
       params:
         - name: subdirectory
           value: "$(context.pipelineRun.uid)"
         - name: pipelineRunUid
           value: $(context.pipelineRun.uid)
+          # since no other tasks are defined in the finally
+          # section, we do not need to delay cleanup.
+        - name: delay
+          value: "0"
       workspaces:
         - name: input
           workspace: release-workspace

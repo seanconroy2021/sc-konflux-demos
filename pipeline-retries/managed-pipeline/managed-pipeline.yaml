@@ -1,0 +1,210 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: test-managed-pipeline
+spec:
+  description: "Test managed pipeline with configurable failure modes for testing retry logic."
+  params:
+    - name: release
+      type: string
+      description: "The namespaced name (namespace/name) of the Release custom resource initiating this pipeline execution."
+    - name: releasePlan
+      type: string
+      description: "The namespaced name (namespace/name) of the releasePlan."
+    - name: releasePlanAdmission
+      type: string
+      description: "The namespaced name (namespace/name) of the releasePlanAdmission."
+    - name: releaseServiceConfig
+      type: string
+      description: "The namespaced name (namespace/name) of the releaseServiceConfig."
+    - name: snapshot
+      type: string
+      description: "The namespaced name (namespace/name) of the snapshot."
+    - name: enterpriseContractPolicy
+      type: string
+      description: "The namespaced name (namespace/name) of the enterprise contract policy."
+  tasks:
+    - name: collect-data
+      params:
+        - name: release
+          value: $(params.release)
+        - name: releasePlan
+          value: $(params.releasePlan)
+        - name: releasePlanAdmission
+          value: $(params.releasePlanAdmission)
+        - name: snapshot
+          value: $(params.snapshot)
+      taskSpec:
+        params:
+          - name: release
+            type: string
+          - name: releasePlan
+            type: string
+          - name: releasePlanAdmission
+            type: string
+          - name: snapshot
+            type: string
+        results:
+          - name: failMode
+            description: "The failure mode extracted from the RPA data."
+          - name: failOnTask
+            description: "The task that should fail, extracted from the RPA data."
+          - name: failOnStep
+            description: "The step that should fail, extracted from the RPA data."
+        steps:
+          - name: collect-data
+            image: quay.io/konflux-ci/release-service-utils:latest
+            script: |
+              #!/bin/sh
+              set -eu
+
+              echo "Release: $(params.release)"
+              echo "ReleasePlan: $(params.releasePlan)"
+              echo "Snapshot: $(params.snapshot)"
+
+              DATA_JSON=$(get-resource "releasePlanAdmission" "$(params.releasePlanAdmission)" | jq -r '.spec.data // "{}"')
+
+              FAIL_MODE=$(echo "$DATA_JSON" | jq -r '.failMode // "none"')
+              FAIL_ON_TASK=$(echo "$DATA_JSON" | jq -r '.failOnTask // "publish-data"')
+              FAIL_ON_STEP=$(echo "$DATA_JSON" | jq -r '.failOnStep // ""')
+
+              echo "failMode: $FAIL_MODE"
+              echo "failOnTask: $FAIL_ON_TASK"
+              echo "failOnStep: $FAIL_ON_STEP"
+
+              echo -n "$FAIL_MODE" > $(results.failMode.path)
+              echo -n "$FAIL_ON_TASK" > $(results.failOnTask.path)
+              echo -n "$FAIL_ON_STEP" > $(results.failOnStep.path)
+
+              echo "Data collection complete."
+    - name: publish-data
+      runAfter:
+        - collect-data
+      params:
+        - name: failMode
+          value: $(tasks.collect-data.results.failMode)
+        - name: failOnTask
+          value: $(tasks.collect-data.results.failOnTask)
+        - name: failOnStep
+          value: $(tasks.collect-data.results.failOnStep)
+      taskSpec:
+        params:
+          - name: failMode
+            type: string
+          - name: failOnTask
+            type: string
+          - name: failOnStep
+            type: string
+        steps:
+          - name: push-artifacts
+            image: quay.io/konflux-ci/release-service-utils:latest
+            script: |
+              #!/bin/sh
+              set -eu
+              SHOULD_FAIL="false"
+              if [ "$(params.failOnTask)" = "publish-data" ]; then
+                if [ -z "$(params.failOnStep)" ] || [ "$(params.failOnStep)" = "push-artifacts" ]; then
+                  SHOULD_FAIL="true"
+                fi
+              fi
+              echo "Publishing release artifacts..."
+              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "error" ]; then
+                echo "Simulating error in push-artifacts" >&2
+                exit 1
+              fi
+              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "oom" ]; then
+                echo "Simulating OOM in push-artifacts..."
+                tail /dev/zero
+              fi
+              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "timeout" ]; then
+                echo "Simulating timeout in push-artifacts..."
+                sleep 180
+              fi
+              echo "Artifacts published."
+            computeResources:
+              requests:
+                memory: "64Mi"
+              limits:
+                memory: "64Mi"
+          - name: verify-publish
+            image: quay.io/konflux-ci/release-service-utils:latest
+            script: |
+              #!/bin/sh
+              set -eu
+              SHOULD_FAIL="false"
+              if [ "$(params.failOnTask)" = "publish-data" ] && [ "$(params.failOnStep)" = "verify-publish" ]; then
+                SHOULD_FAIL="true"
+              fi
+              echo "Verifying published artifacts..."
+              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "error" ]; then
+                echo "Simulating error in verify-publish" >&2
+                exit 1
+              fi
+              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "oom" ]; then
+                echo "Simulating OOM in verify-publish..."
+                tail /dev/zero
+              fi
+              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "timeout" ]; then
+                echo "Simulating timeout in verify-publish..."
+                sleep 180
+              fi
+              echo "Verification complete."
+            computeResources:
+              requests:
+                memory: "64Mi"
+              limits:
+                memory: "64Mi"
+    - name: update-status
+      runAfter:
+        - publish-data
+      params:
+        - name: release
+          value: $(params.release)
+        - name: failMode
+          value: $(tasks.collect-data.results.failMode)
+        - name: failOnTask
+          value: $(tasks.collect-data.results.failOnTask)
+        - name: failOnStep
+          value: $(tasks.collect-data.results.failOnStep)
+      taskSpec:
+        params:
+          - name: release
+            type: string
+          - name: failMode
+            type: string
+          - name: failOnTask
+            type: string
+          - name: failOnStep
+            type: string
+        steps:
+          - name: update-cr-status
+            image: quay.io/konflux-ci/release-service-utils:latest
+            script: |
+              #!/bin/sh
+              set -eu
+              SHOULD_FAIL="false"
+              if [ "$(params.failOnTask)" = "update-status" ]; then
+                if [ -z "$(params.failOnStep)" ] || [ "$(params.failOnStep)" = "update-cr-status" ]; then
+                  SHOULD_FAIL="true"
+                fi
+              fi
+              echo "Updating CR status for $(params.release)..."
+              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "error" ]; then
+                echo "Simulating error in update-cr-status" >&2
+                exit 1
+              fi
+              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "oom" ]; then
+                echo "Simulating OOM in update-cr-status..."
+                tail /dev/zero
+              fi
+              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "timeout" ]; then
+                echo "Simulating timeout in update-cr-status..."
+                sleep 180
+              fi
+              echo "Status updated successfully."
+            computeResources:
+              requests:
+                memory: "64Mi"
+              limits:
+                memory: "64Mi"

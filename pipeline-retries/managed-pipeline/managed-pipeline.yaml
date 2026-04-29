@@ -4,26 +4,39 @@ kind: Pipeline
 metadata:
   name: test-managed-pipeline
 spec:
-  description: "Test managed pipeline with configurable failure modes for testing retry logic."
+  description: >-
+    Test managed pipeline with configurable
+    failure modes for testing retry logic.
   params:
     - name: release
       type: string
-      description: "The namespaced name (namespace/name) of the Release custom resource initiating this pipeline execution."
+      description: >-
+        The namespaced name of the Release
+        custom resource.
     - name: releasePlan
       type: string
-      description: "The namespaced name (namespace/name) of the releasePlan."
+      description: >-
+        The namespaced name of the
+        releasePlan.
     - name: releasePlanAdmission
       type: string
-      description: "The namespaced name (namespace/name) of the releasePlanAdmission."
+      description: >-
+        The namespaced name of the
+        releasePlanAdmission.
     - name: releaseServiceConfig
       type: string
-      description: "The namespaced name (namespace/name) of the releaseServiceConfig."
+      description: >-
+        The namespaced name of the
+        releaseServiceConfig.
     - name: snapshot
       type: string
-      description: "The namespaced name (namespace/name) of the snapshot."
+      description: >-
+        The namespaced name of the snapshot.
     - name: enterpriseContractPolicy
       type: string
-      description: "The namespaced name (namespace/name) of the enterprise contract policy."
+      description: >-
+        The namespaced name of the enterprise
+        contract policy.
   tasks:
     - name: collect-data
       params:
@@ -47,35 +60,77 @@ spec:
             type: string
         results:
           - name: failMode
-            description: "The failure mode extracted from the RPA data."
+            description: >-
+              The failure mode from RPA data.
           - name: failOnTask
-            description: "The task that should fail, extracted from the RPA data."
+            description: >-
+              The task that should fail.
           - name: failOnStep
-            description: "The step that should fail, extracted from the RPA data."
+            description: >-
+              The step that should fail.
+          - name: shouldFail
+            description: >-
+              Whether this attempt should fail.
         steps:
           - name: collect-data
-            image: quay.io/konflux-ci/release-service-utils:latest
+            image: >-
+              quay.io/konflux-ci/release-service-utils:latest
             script: |
               #!/bin/sh
               set -eu
 
               echo "Release: $(params.release)"
-              echo "ReleasePlan: $(params.releasePlan)"
+              echo "Plan: $(params.releasePlan)"
               echo "Snapshot: $(params.snapshot)"
 
-              DATA_JSON=$(get-resource "releasePlanAdmission" "$(params.releasePlanAdmission)" | jq -r '.spec.data // "{}"')
+              RPA="$(params.releasePlanAdmission)"
+              DATA_JSON=$(get-resource \
+                "releasePlanAdmission" "$RPA" \
+                | jq -r '.spec.data // "{}"')
 
-              FAIL_MODE=$(echo "$DATA_JSON" | jq -r '.failMode // "none"')
-              FAIL_ON_TASK=$(echo "$DATA_JSON" | jq -r '.failOnTask // "publish-data"')
-              FAIL_ON_STEP=$(echo "$DATA_JSON" | jq -r '.failOnStep // ""')
+              FAIL_MODE=$(echo "$DATA_JSON" \
+                | jq -r '.failMode // "none"')
+              FAIL_ON_TASK=$(echo "$DATA_JSON" \
+                | jq -r '.failOnTask // "publish-data"')
+              FAIL_ON_STEP=$(echo "$DATA_JSON" \
+                | jq -r '.failOnStep // ""')
+              PASS_RETRIES=$(echo "$DATA_JSON" \
+                | jq -r '.passRetries // "0"')
 
               echo "failMode: $FAIL_MODE"
               echo "failOnTask: $FAIL_ON_TASK"
               echo "failOnStep: $FAIL_ON_STEP"
+              echo "passRetries: $PASS_RETRIES"
 
-              echo -n "$FAIL_MODE" > $(results.failMode.path)
-              echo -n "$FAIL_ON_TASK" > $(results.failOnTask.path)
-              echo -n "$FAIL_ON_STEP" > $(results.failOnStep.path)
+              SHOULD_FAIL="true"
+              if [ "$FAIL_MODE" = "none" ]; then
+                SHOULD_FAIL="false"
+              elif [ "$PASS_RETRIES" -gt 0 ] \
+                2>/dev/null; then
+                REL="$(params.release)"
+                ATTEMPT_COUNT=$(get-resource \
+                  "release" "$REL" | jq \
+                  '.status.managedPipelineAttempts
+                  | length // 0')
+                echo "Attempt: $ATTEMPT_COUNT"
+                echo "Pass after: $PASS_RETRIES"
+                if [ "$ATTEMPT_COUNT" \
+                  -ge "$PASS_RETRIES" ]; then
+                  echo "Will SUCCEED"
+                  SHOULD_FAIL="false"
+                else
+                  echo "Will FAIL"
+                fi
+              fi
+
+              RPATH=$(results.failMode.path)
+              echo -n "$FAIL_MODE" > "$RPATH"
+              RPATH=$(results.failOnTask.path)
+              echo -n "$FAIL_ON_TASK" > "$RPATH"
+              RPATH=$(results.failOnStep.path)
+              echo -n "$FAIL_ON_STEP" > "$RPATH"
+              RPATH=$(results.shouldFail.path)
+              echo -n "$SHOULD_FAIL" > "$RPATH"
 
               echo "Data collection complete."
     - name: publish-data
@@ -84,11 +139,17 @@ spec:
       timeout: "2m"
       params:
         - name: failMode
-          value: $(tasks.collect-data.results.failMode)
+          value: >-
+            $(tasks.collect-data.results.failMode)
         - name: failOnTask
-          value: $(tasks.collect-data.results.failOnTask)
+          value: >-
+            $(tasks.collect-data.results.failOnTask)
         - name: failOnStep
-          value: $(tasks.collect-data.results.failOnStep)
+          value: >-
+            $(tasks.collect-data.results.failOnStep)
+        - name: shouldFail
+          value: >-
+            $(tasks.collect-data.results.shouldFail)
       taskSpec:
         params:
           - name: failMode
@@ -97,33 +158,47 @@ spec:
             type: string
           - name: failOnStep
             type: string
+          - name: shouldFail
+            type: string
         steps:
           - name: push-artifacts
-            image: quay.io/konflux-ci/release-service-utils:latest
+            image: >-
+              quay.io/konflux-ci/release-service-utils:latest
             script: |
               #!/bin/sh
               set -eu
               SHOULD_FAIL="false"
-              if [ "$(params.failOnTask)" = "publish-data" ]; then
-                if [ -z "$(params.failOnStep)" ] || [ "$(params.failOnStep)" = "push-artifacts" ]; then
+              TASK="$(params.failOnTask)"
+              STEP="$(params.failOnStep)"
+              MODE="$(params.failMode)"
+              if [ "$(params.shouldFail)" = "true" ] \
+                && [ "$TASK" = "publish-data" ]; then
+                if [ -z "$STEP" ] \
+                  || [ "$STEP" = "push-artifacts" ]
+                then
                   SHOULD_FAIL="true"
                 fi
               fi
-              echo "Publishing release artifacts..."
-              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "error" ]; then
-                echo "Simulating error in push-artifacts" >&2
+              echo "Publishing artifacts..."
+              if [ "$SHOULD_FAIL" = "true" ] \
+                && [ "$MODE" = "error" ]; then
+                echo "Simulating error" >&2
                 exit 1
               fi
-              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "oom" ]; then
-                echo "Simulating OOM in push-artifacts..."
+              if [ "$SHOULD_FAIL" = "true" ] \
+                && [ "$MODE" = "oom" ]; then
+                echo "Simulating OOM..."
                 tail /dev/zero
               fi
-              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "pipeline-timeout" ]; then
-                echo "Simulating pipeline timeout in push-artifacts..."
+              if [ "$SHOULD_FAIL" = "true" ] \
+                && [ "$MODE" = "pipeline-timeout" ]
+              then
+                echo "Simulating pipeline timeout..."
                 sleep 180
               fi
-              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "task-timeout" ]; then
-                echo "Simulating task timeout in push-artifacts..."
+              if [ "$SHOULD_FAIL" = "true" ] \
+                && [ "$MODE" = "task-timeout" ]; then
+                echo "Simulating task timeout..."
                 sleep 180
               fi
               echo "Artifacts published."
@@ -133,29 +208,41 @@ spec:
               limits:
                 memory: "64Mi"
           - name: verify-publish
-            image: quay.io/konflux-ci/release-service-utils:latest
+            image: >-
+              quay.io/konflux-ci/release-service-utils:latest
             script: |
               #!/bin/sh
               set -eu
               SHOULD_FAIL="false"
-              if [ "$(params.failOnTask)" = "publish-data" ] && [ "$(params.failOnStep)" = "verify-publish" ]; then
+              TASK="$(params.failOnTask)"
+              STEP="$(params.failOnStep)"
+              MODE="$(params.failMode)"
+              if [ "$(params.shouldFail)" = "true" ] \
+                && [ "$TASK" = "publish-data" ] \
+                && [ "$STEP" = "verify-publish" ]
+              then
                 SHOULD_FAIL="true"
               fi
-              echo "Verifying published artifacts..."
-              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "error" ]; then
-                echo "Simulating error in verify-publish" >&2
+              echo "Verifying artifacts..."
+              if [ "$SHOULD_FAIL" = "true" ] \
+                && [ "$MODE" = "error" ]; then
+                echo "Simulating error" >&2
                 exit 1
               fi
-              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "oom" ]; then
-                echo "Simulating OOM in verify-publish..."
+              if [ "$SHOULD_FAIL" = "true" ] \
+                && [ "$MODE" = "oom" ]; then
+                echo "Simulating OOM..."
                 tail /dev/zero
               fi
-              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "pipeline-timeout" ]; then
-                echo "Simulating pipeline timeout in verify-publish..."
+              if [ "$SHOULD_FAIL" = "true" ] \
+                && [ "$MODE" = "pipeline-timeout" ]
+              then
+                echo "Simulating pipeline timeout..."
                 sleep 180
               fi
-              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "task-timeout" ]; then
-                echo "Simulating task timeout in verify-publish..."
+              if [ "$SHOULD_FAIL" = "true" ] \
+                && [ "$MODE" = "task-timeout" ]; then
+                echo "Simulating task timeout..."
                 sleep 180
               fi
               echo "Verification complete."
@@ -172,11 +259,17 @@ spec:
         - name: release
           value: $(params.release)
         - name: failMode
-          value: $(tasks.collect-data.results.failMode)
+          value: >-
+            $(tasks.collect-data.results.failMode)
         - name: failOnTask
-          value: $(tasks.collect-data.results.failOnTask)
+          value: >-
+            $(tasks.collect-data.results.failOnTask)
         - name: failOnStep
-          value: $(tasks.collect-data.results.failOnStep)
+          value: >-
+            $(tasks.collect-data.results.failOnStep)
+        - name: shouldFail
+          value: >-
+            $(tasks.collect-data.results.shouldFail)
       taskSpec:
         params:
           - name: release
@@ -187,33 +280,48 @@ spec:
             type: string
           - name: failOnStep
             type: string
+          - name: shouldFail
+            type: string
         steps:
           - name: update-cr-status
-            image: quay.io/konflux-ci/release-service-utils:latest
+            image: >-
+              quay.io/konflux-ci/release-service-utils:latest
             script: |
               #!/bin/sh
               set -eu
               SHOULD_FAIL="false"
-              if [ "$(params.failOnTask)" = "update-status" ]; then
-                if [ -z "$(params.failOnStep)" ] || [ "$(params.failOnStep)" = "update-cr-status" ]; then
+              TASK="$(params.failOnTask)"
+              STEP="$(params.failOnStep)"
+              MODE="$(params.failMode)"
+              REL="$(params.release)"
+              if [ "$(params.shouldFail)" = "true" ] \
+                && [ "$TASK" = "update-status" ]; then
+                if [ -z "$STEP" ] \
+                  || [ "$STEP" = "update-cr-status" ]
+                then
                   SHOULD_FAIL="true"
                 fi
               fi
-              echo "Updating CR status for $(params.release)..."
-              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "error" ]; then
-                echo "Simulating error in update-cr-status" >&2
+              echo "Updating CR status for $REL..."
+              if [ "$SHOULD_FAIL" = "true" ] \
+                && [ "$MODE" = "error" ]; then
+                echo "Simulating error" >&2
                 exit 1
               fi
-              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "oom" ]; then
-                echo "Simulating OOM in update-cr-status..."
+              if [ "$SHOULD_FAIL" = "true" ] \
+                && [ "$MODE" = "oom" ]; then
+                echo "Simulating OOM..."
                 tail /dev/zero
               fi
-              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "pipeline-timeout" ]; then
-                echo "Simulating pipeline timeout in update-cr-status..."
+              if [ "$SHOULD_FAIL" = "true" ] \
+                && [ "$MODE" = "pipeline-timeout" ]
+              then
+                echo "Simulating pipeline timeout..."
                 sleep 180
               fi
-              if [ "$SHOULD_FAIL" = "true" ] && [ "$(params.failMode)" = "task-timeout" ]; then
-                echo "Simulating task timeout in update-cr-status..."
+              if [ "$SHOULD_FAIL" = "true" ] \
+                && [ "$MODE" = "task-timeout" ]; then
+                echo "Simulating task timeout..."
                 sleep 180
               fi
               echo "Status updated successfully."
